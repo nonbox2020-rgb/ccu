@@ -1,0 +1,26 @@
+{
+  "name": "co2-reduction-support",
+  "version": "1.0.0",
+  "description": "CO2削減サポート — 建材見積書AI診断ツール (TBM)",
+  "type": "commonjs",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "connect-pg-simple": "^10.0.0",
+    "express": "^4.21.0",
+    "express-rate-limit": "^8.5.2",
+    "express-session": "^1.19.0",
+    "helmet": "^8.0.0",
+    "iconv-lite": "^0.6.3",
+    "multer": "^1.4.5-lts.1",
+    "papaparse": "^5.4.1",
+    "pg": "^8.22.0",
+    "xlsx": "^0.18.5"
+  }
+}
