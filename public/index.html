@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>見積診断 · CO2削減サポート</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <main class="wrap">
+    <div class="page-head">
+      <div class="eyebrow" id="eyebrow"></div>
+      <h1 class="page-title">建材見積書のAI診断</h1>
+      <p class="page-sub">見積書をアップロードすると、AIが明細を読み取り、TBM製品への置き換えによるコスト差額とCO<sub>2</sub>削減効果を自動で算出します。対応形式は問いません。</p>
+    </div>
+
+    <div id="aiWarn"></div>
+
+    <!-- upload -->
+    <section class="card card-pad" id="uploadCard">
+      <input type="file" id="fileInput" class="hidden">
+      <div class="dropzone" id="dropzone">
+        <div class="dz-icon" id="dzIcon"></div>
+        <div class="dz-title">見積書をドラッグ＆ドロップ、またはクリックして選択</div>
+        <div class="dz-sub">御社製品DBと自動照合し、置き換え効果を診断します</div>
+        <div class="dz-formats">PDF · EXCEL · CSV · 画像 (JPG/PNG) · TXT</div>
+      </div>
+      <div id="fileArea"></div>
+      <div style="margin-top:18px; display:flex; gap:12px; align-items:center;">
+        <button class="btn btn-primary" id="analyzeBtn" disabled><span id="analyzeLabel">AI診断を実行</span></button>
+        <span class="dz-formats" id="hint" style="letter-spacing:normal"></span>
+      </div>
+    </section>
+
+    <!-- progress -->
+    <section class="card card-pad hidden" id="progressCard">
+      <div class="progress"><span class="spinner"></span><span id="progressText">見積書を解析しています…</span></div>
+      <div class="skeleton-row" style="width:100%"></div>
+      <div class="skeleton-row" style="width:88%"></div>
+      <div class="skeleton-row" style="width:94%"></div>
+    </section>
+
+    <!-- error -->
+    <div id="errorArea"></div>
+
+    <!-- results -->
+    <div id="results" class="hidden"></div>
+
+    <div class="foot-note" id="footNote"></div>
+  </main>
+
+  <script src="/js/common.js"></script>
+  <script src="/js/analyze.js"></script>
+</body>
+</html>
