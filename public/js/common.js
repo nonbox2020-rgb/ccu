@@ -78,6 +78,13 @@ async function renderTopbar(active) {
   const user = sess.user || {};
   const orgName = company || (sess.org && sess.org.name) || "";
   const initial = (user.name || user.email || "?").trim().charAt(0).toUpperCase();
+  const isAdmin = !!sess.isPlatformAdmin;
+
+  // 製品DB・設定は運営者(プラットフォーム管理者)のみ表示
+  const adminLinks = isAdmin
+    ? `<a href="/products.html" class="${active === "products" ? "active" : ""}">製品DB</a>
+        <a href="/settings.html" class="${active === "settings" ? "active" : ""}">設定</a>`
+    : "";
 
   const logoInner = logo ? `<img src="${esc(logo)}" alt="ロゴ">` : icon("leaf", 18);
   const bar = document.createElement("div");
@@ -94,13 +101,12 @@ async function renderTopbar(active) {
       <button class="nav-toggle" id="navToggle" aria-label="メニュー">${icon("menu", 20)}</button>
       <nav class="nav" id="mainNav">
         <a href="/" class="${active === "analyze" ? "active" : ""}">見積診断</a>
-        <a href="/products.html" class="${active === "products" ? "active" : ""}">製品DB</a>
-        <a href="/settings.html" class="${active === "settings" ? "active" : ""}">設定</a>
+        ${adminLinks}
         <div class="nav-user">
           <span class="avatar" title="${esc(user.email || "")}">${esc(initial)}</span>
           <span class="nav-user-meta">
             <span class="nav-user-name">${esc(user.name || user.email || "")}</span>
-            <span class="nav-user-role">${roleLabel(user.role)}</span>
+            <span class="nav-user-role">${isAdmin ? "運営者" : roleLabel(user.role)}</span>
           </span>
           <a href="#" class="logout" id="logoutLink" title="ログアウト">${icon("logout", 15)}</a>
         </div>
