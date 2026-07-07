@@ -313,6 +313,28 @@ app.delete("/api/products/:id", requirePlatformAdmin, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// サンプル建材の一括投入（運営者のみ）。新築工事見積書にマッチする仮製品セット。
+const SAMPLE_MATERIALS = [
+  { name: "LIMEX 高断熱サッシ", category: "建具", unit: "箇所", unit_price: 45000, co2_per_unit: 12, baseline_co2_per_unit: 38, keywords: "複層サッシAPW,複層サッシ,サッシ,APW,樹脂サッシ,窓,建具", description: "高断熱・省エネの環境配慮型サッシ。", data_source: "社内LCA試算（仮データ）", verified: false },
+  { name: "エコLow-E複層ガラス", category: "ガラス", unit: "箇所", unit_price: 38000, co2_per_unit: 9, baseline_co2_per_unit: 25, keywords: "ガラス,防犯ガラス,複層ガラス,Low-Eガラス", description: "断熱・防犯性能を両立した複層ガラス。", data_source: "社内LCA試算（仮データ）", verified: false },
+  { name: "高効率エコキュート（提携品）", category: "給湯設備", unit: "台", unit_price: 420000, co2_per_unit: 180, baseline_co2_per_unit: 650, keywords: "エコキュート,給湯,ヒートポンプ", description: "他社提携の高効率給湯機（紹介手数料対象の想定）。", data_source: "メーカー公表値（仮）", verified: true },
+  { name: "CR LIMEX 排水管材", category: "配管", unit: "式", unit_price: 450000, co2_per_unit: 120, baseline_co2_per_unit: 300, keywords: "給排水,排水,配管,上下水道", description: "カーボンリサイクル素材を用いた排水配管材。", data_source: "社内LCA試算（仮データ）", verified: false },
+  { name: "LIMEX 構造用ボード", category: "構造材", unit: "式", unit_price: 15000000, co2_per_unit: 8500, baseline_co2_per_unit: 14000, keywords: "木造,在来工法,本体,構造,ダブルフォーム", description: "石灰石由来の低炭素構造材（本体工事の代替想定）。", data_source: "社内LCA試算（仮データ）", verified: false },
+];
+
+app.post("/api/products/seed-samples", requirePlatformAdmin, wrap(async (req, res) => {
+  const existing = await db.listProducts(req.user.org_id);
+  const existingNames = new Set(existing.map((p) => p.name));
+  let added = 0;
+  for (const m of SAMPLE_MATERIALS) {
+    if (existingNames.has(m.name)) continue; // 重複は追加しない
+    await db.createProduct(req.user.org_id, m);
+    added += 1;
+  }
+  await db.audit(req.user.org_id, req.user, "product.seed", `サンプル建材を一括投入（${added}件）`, clientIp(req));
+  res.json({ ok: true, added, skipped: SAMPLE_MATERIALS.length - added });
+}));
+
 /* ============================================================
    設定API
    - GET: 運営者は自組織の設定。一般ユーザーには運営者のブランディング(会社名・ロゴ)を配信
