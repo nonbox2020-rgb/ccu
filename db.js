@@ -48,11 +48,25 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'member',
   active BOOLEAN DEFAULT true,
+  email_verified BOOLEAN DEFAULT false,
   last_login_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE (org_id, email)
 );
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
+-- 認証コード（メール確認・パスワード再設定の両用）
+CREATE TABLE IF NOT EXISTS auth_codes (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  purpose TEXT NOT NULL,          -- 'verify_email' | 'password_reset'
+  code_hash TEXT NOT NULL,        -- 6桁コードのハッシュ
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  attempts INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_auth_codes_user ON auth_codes(user_id, purpose);
 
 CREATE TABLE IF NOT EXISTS products (
   id SERIAL PRIMARY KEY,
@@ -114,6 +128,8 @@ const SEED_PRODUCTS = [
 
 async function init() {
   await pool.query(SCHEMA);
+  // 既存DBへの後方互換マイグレーション（列が無ければ追加）
+  await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT false");
   console.log("[db] スキーマ初期化完了");
   return true;
 }
@@ -188,6 +204,67 @@ async function createOrganizationWithOwner({ orgName, email, password, userName 
 
 async function getOrganization(id) {
   const { rows } = await pool.query("SELECT * FROM organizations WHERE id = $1", [id]);
+  return rows[0] || null;
+}
+
+/* ------------------------------ 認証コード（確認・再設定） ------------------------------ */
+
+// 6桁コードを生成しハッシュ保存。既存の同目的の未使用コードは無効化する。
+async function issueAuthCode(userId, purpose) {
+  const code = String(Math.floor(100000 + Math.random() * 900000)); // 6桁
+  const codeHash = await bcrypt.hash(code, 10);
+  // 同一ユーザー・同一目的の古いコードを無効化
+  await pool.query(
+    "UPDATE auth_codes SET used_at = now() WHERE user_id = $1 AND purpose = $2 AND used_at IS NULL",
+    [userId, purpose]
+  );
+  await pool.query(
+    `INSERT INTO auth_codes (user_id, purpose, code_hash, expires_at)
+     VALUES ($1, $2, $3, now() + interval '10 minutes')`,
+    [userId, purpose, codeHash]
+  );
+  return code; // 呼び出し側でメール送信に使う（DBには平文を残さない）
+}
+
+// コードを検証。成功なら used_at をセットして true。試行回数も制限。
+async function verifyAuthCode(userId, purpose, code) {
+  const { rows } = await pool.query(
+    `SELECT * FROM auth_codes
+     WHERE user_id = $1 AND purpose = $2 AND used_at IS NULL AND expires_at > now()
+     ORDER BY created_at DESC LIMIT 1`,
+    [userId, purpose]
+  );
+  if (!rows.length) return { ok: false, reason: "expired" };
+  const rec = rows[0];
+  if (rec.attempts >= 5) {
+    await pool.query("UPDATE auth_codes SET used_at = now() WHERE id = $1", [rec.id]);
+    return { ok: false, reason: "too_many_attempts" };
+  }
+  const match = await bcrypt.compare(String(code), rec.code_hash);
+  if (!match) {
+    await pool.query("UPDATE auth_codes SET attempts = attempts + 1 WHERE id = $1", [rec.id]);
+    return { ok: false, reason: "mismatch" };
+  }
+  await pool.query("UPDATE auth_codes SET used_at = now() WHERE id = $1", [rec.id]);
+  return { ok: true };
+}
+
+async function markEmailVerified(userId) {
+  await pool.query("UPDATE users SET email_verified = true WHERE id = $1", [userId]);
+}
+
+async function updatePassword(userId, newPassword) {
+  const hash = await bcrypt.hash(newPassword, 12);
+  await pool.query("UPDATE users SET password_hash = $1 WHERE id = $2", [hash, userId]);
+}
+
+// メール確認・再設定用に、メールから単一ユーザーを引く（アクティブ・未確認含む）
+async function findAnyUserByEmail(email) {
+  const { rows } = await pool.query(
+    `SELECT u.*, o.name AS org_name FROM users u JOIN organizations o ON o.id = u.org_id
+     WHERE u.email = $1 ORDER BY u.created_at ASC LIMIT 1`,
+    [String(email).toLowerCase().trim()]
+  );
   return rows[0] || null;
 }
 
@@ -396,6 +473,11 @@ module.exports = {
   ping,
   createOrganizationWithOwner,
   getOrganization,
+  issueAuthCode,
+  verifyAuthCode,
+  markEmailVerified,
+  updatePassword,
+  findAnyUserByEmail,
   findUserByEmail,
   verifyPassword,
   getUserById,
