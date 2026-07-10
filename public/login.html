@@ -32,6 +32,7 @@
             <input type="password" id="li_password" autocomplete="current-password" placeholder="••••••••"></label>
           <button class="btn btn-primary auth-submit" id="loginBtn" type="button">ログイン</button>
           <div class="auth-msg" id="loginMsg"></div>
+          <p class="auth-note" style="text-align:right;margin-top:10px"><a href="#" id="forgotLink" style="color:var(--accent-2)">パスワードをお忘れですか？</a></p>
         </div>
 
         <!-- 新規登録 -->
@@ -46,7 +47,39 @@
             <input type="password" id="su_password" autocomplete="new-password" placeholder="••••••••"></label>
           <button class="btn btn-primary auth-submit" id="signupBtn" type="button">アカウントを作成</button>
           <div class="auth-msg" id="signupMsg"></div>
-          <p class="auth-note">登録すると管理者（オーナー）アカウントが作成され、サンプル製品が初期登録されます。</p>
+          <p class="auth-note">登録後、確認コードをメールでお送りします。コードを入力するとアカウントが有効になります。</p>
+        </div>
+
+        <!-- メール確認コード入力 -->
+        <div id="verifyForm" class="hidden">
+          <p class="auth-note" style="margin:0 0 14px">確認コードを <strong id="verifyEmailLabel"></strong> に送信しました。メールに記載の6桁コードを入力してください。</p>
+          <label class="field"><span>確認コード <small>6桁</small></span>
+            <input type="text" id="vf_code" inputmode="numeric" maxlength="6" placeholder="123456" style="font-family:var(--mono);font-size:20px;letter-spacing:6px;text-align:center"></label>
+          <button class="btn btn-primary auth-submit" id="verifyBtn" type="button">確認して続ける</button>
+          <div class="auth-msg" id="verifyMsg"></div>
+          <p class="auth-note" style="text-align:center;margin-top:12px"><a href="#" id="resendLink" style="color:var(--accent-2)">コードを再送する</a> ・ <a href="#" id="backToLoginFromVerify" style="color:var(--muted)">戻る</a></p>
+        </div>
+
+        <!-- パスワード再設定：コード送信 -->
+        <div id="forgotForm" class="hidden">
+          <p class="auth-note" style="margin:0 0 14px">登録済みのメールアドレスを入力してください。パスワード再設定用のコードをお送りします。</p>
+          <label class="field"><span>メールアドレス</span>
+            <input type="email" id="fg_email" autocomplete="username" placeholder="you@company.co.jp"></label>
+          <button class="btn btn-primary auth-submit" id="forgotBtn" type="button">再設定コードを送る</button>
+          <div class="auth-msg" id="forgotMsg"></div>
+          <p class="auth-note" style="text-align:center;margin-top:12px"><a href="#" id="backToLoginFromForgot" style="color:var(--muted)">ログインに戻る</a></p>
+        </div>
+
+        <!-- パスワード再設定：コード＋新パスワード -->
+        <div id="resetForm" class="hidden">
+          <p class="auth-note" style="margin:0 0 14px">メールに届いた6桁コードと、新しいパスワードを入力してください。</p>
+          <label class="field"><span>再設定コード <small>6桁</small></span>
+            <input type="text" id="rs_code" inputmode="numeric" maxlength="6" placeholder="123456" style="font-family:var(--mono);font-size:20px;letter-spacing:6px;text-align:center"></label>
+          <label class="field"><span>新しいパスワード <small>8文字以上</small></span>
+            <input type="password" id="rs_password" autocomplete="new-password" placeholder="••••••••"></label>
+          <button class="btn btn-primary auth-submit" id="resetBtn" type="button">パスワードを再設定</button>
+          <div class="auth-msg" id="resetMsg"></div>
+          <p class="auth-note" style="text-align:center;margin-top:12px"><a href="#" id="backToLoginFromReset" style="color:var(--muted)">ログインに戻る</a></p>
         </div>
       </div>
 
@@ -61,59 +94,164 @@
 
     const tabLogin = document.getElementById("tabLogin");
     const tabSignup = document.getElementById("tabSignup");
-    const loginForm = document.getElementById("loginForm");
-    const signupForm = document.getElementById("signupForm");
+    const tabs = document.querySelector(".auth-tabs");
+    const panels = {
+      login: document.getElementById("loginForm"),
+      signup: document.getElementById("signupForm"),
+      verify: document.getElementById("verifyForm"),
+      forgot: document.getElementById("forgotForm"),
+      reset: document.getElementById("resetForm"),
+    };
+    let pendingEmail = "";
 
-    function showTab(which) {
-      const isLogin = which === "login";
-      tabLogin.classList.toggle("active", isLogin);
-      tabSignup.classList.toggle("active", !isLogin);
-      loginForm.classList.toggle("hidden", !isLogin);
-      signupForm.classList.toggle("hidden", isLogin);
+    function show(which) {
+      Object.entries(panels).forEach(([k, el]) => el.classList.toggle("hidden", k !== which));
+      // タブは login/signup のときだけ表示
+      const tabbed = which === "login" || which === "signup";
+      tabs.style.display = tabbed ? "" : "none";
+      if (tabbed) {
+        tabLogin.classList.toggle("active", which === "login");
+        tabSignup.classList.toggle("active", which === "signup");
+      }
     }
-    tabLogin.addEventListener("click", () => showTab("login"));
-    tabSignup.addEventListener("click", () => showTab("signup"));
+    tabLogin.addEventListener("click", () => show("login"));
+    tabSignup.addEventListener("click", () => show("signup"));
 
+    function setMsg(id, text, isErr) {
+      const m = document.getElementById(id);
+      m.textContent = text; m.className = "auth-msg" + (isErr ? " err" : "");
+    }
+    async function postJSON(url, body) {
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const data = await res.json().catch(() => ({}));
+      return { res, data };
+    }
+
+    // ---- ログイン ----
     async function doLogin() {
-      const msg = document.getElementById("loginMsg");
       const btn = document.getElementById("loginBtn");
-      msg.textContent = ""; msg.className = "auth-msg";
+      setMsg("loginMsg", "", false);
       const email = document.getElementById("li_email").value.trim();
       const password = document.getElementById("li_password").value;
-      if (!email || !password) { msg.textContent = "メールアドレスとパスワードを入力してください。"; msg.classList.add("err"); return; }
+      if (!email || !password) { setMsg("loginMsg", "メールアドレスとパスワードを入力してください。", true); return; }
       btn.disabled = true; btn.textContent = "ログイン中…";
       try {
-        const res = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
-        const data = await res.json();
-        if (res.ok && data.ok) { window.location.href = "/"; }
-        else { msg.textContent = data.error || "ログインに失敗しました。"; msg.classList.add("err"); btn.disabled = false; btn.textContent = "ログイン"; }
-      } catch (e) { msg.textContent = "通信エラーが発生しました。"; msg.classList.add("err"); btn.disabled = false; btn.textContent = "ログイン"; }
+        const { res, data } = await postJSON("/api/login", { email, password });
+        if (res.ok && data.ok) { window.location.href = "/"; return; }
+        if (res.status === 403 && data.needVerify) {
+          pendingEmail = data.email || email;
+          document.getElementById("verifyEmailLabel").textContent = pendingEmail;
+          setMsg("verifyMsg", "確認コードを送信しました。", false);
+          show("verify");
+        } else {
+          setMsg("loginMsg", data.error || "ログインに失敗しました。", true);
+        }
+      } catch (e) { setMsg("loginMsg", "通信エラーが発生しました。", true); }
+      btn.disabled = false; btn.textContent = "ログイン";
     }
 
+    // ---- 新規登録 ----
     async function doSignup() {
-      const msg = document.getElementById("signupMsg");
       const btn = document.getElementById("signupBtn");
-      msg.textContent = ""; msg.className = "auth-msg";
+      setMsg("signupMsg", "", false);
       const orgName = document.getElementById("su_org").value.trim();
       const userName = document.getElementById("su_name").value.trim();
       const email = document.getElementById("su_email").value.trim();
       const password = document.getElementById("su_password").value;
-      if (!orgName) { msg.textContent = "会社名を入力してください。"; msg.classList.add("err"); return; }
-      if (!email) { msg.textContent = "メールアドレスを入力してください。"; msg.classList.add("err"); return; }
-      if (password.length < 8) { msg.textContent = "パスワードは8文字以上で設定してください。"; msg.classList.add("err"); return; }
+      if (!orgName) { setMsg("signupMsg", "会社名を入力してください。", true); return; }
+      if (!email) { setMsg("signupMsg", "メールアドレスを入力してください。", true); return; }
+      if (password.length < 8) { setMsg("signupMsg", "パスワードは8文字以上で設定してください。", true); return; }
       btn.disabled = true; btn.textContent = "作成中…";
       try {
-        const res = await fetch("/api/signup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orgName, userName, email, password }) });
-        const data = await res.json();
-        if (res.ok && data.ok) { window.location.href = "/"; }
-        else { msg.textContent = data.error || "登録に失敗しました。"; msg.classList.add("err"); btn.disabled = false; btn.textContent = "アカウントを作成"; }
-      } catch (e) { msg.textContent = "通信エラーが発生しました。"; msg.classList.add("err"); btn.disabled = false; btn.textContent = "アカウントを作成"; }
+        const { res, data } = await postJSON("/api/signup", { orgName, userName, email, password });
+        if (res.ok && data.ok) {
+          pendingEmail = data.email || email;
+          document.getElementById("verifyEmailLabel").textContent = pendingEmail;
+          show("verify");
+        } else {
+          setMsg("signupMsg", data.error || "登録に失敗しました。", true);
+        }
+      } catch (e) { setMsg("signupMsg", "通信エラーが発生しました。", true); }
+      btn.disabled = false; btn.textContent = "アカウントを作成";
     }
 
+    // ---- メール確認コード ----
+    async function doVerify() {
+      const btn = document.getElementById("verifyBtn");
+      setMsg("verifyMsg", "", false);
+      const code = document.getElementById("vf_code").value.trim();
+      if (code.length !== 6) { setMsg("verifyMsg", "6桁のコードを入力してください。", true); return; }
+      btn.disabled = true; btn.textContent = "確認中…";
+      try {
+        const { res, data } = await postJSON("/api/verify-email", { email: pendingEmail, code });
+        if (res.ok && data.ok) { window.location.href = "/"; return; }
+        setMsg("verifyMsg", data.error || "確認に失敗しました。", true);
+      } catch (e) { setMsg("verifyMsg", "通信エラーが発生しました。", true); }
+      btn.disabled = false; btn.textContent = "確認して続ける";
+    }
+    async function doResend() {
+      setMsg("verifyMsg", "送信中…", false);
+      try {
+        await postJSON("/api/resend-code", { email: pendingEmail });
+        setMsg("verifyMsg", "確認コードを再送しました。", false);
+      } catch (e) { setMsg("verifyMsg", "再送に失敗しました。", true); }
+    }
+
+    // ---- パスワード忘れ：コード送信 ----
+    async function doForgot() {
+      const btn = document.getElementById("forgotBtn");
+      setMsg("forgotMsg", "", false);
+      const email = document.getElementById("fg_email").value.trim();
+      if (!email) { setMsg("forgotMsg", "メールアドレスを入力してください。", true); return; }
+      btn.disabled = true; btn.textContent = "送信中…";
+      try {
+        await postJSON("/api/forgot-password", { email });
+        pendingEmail = email;
+        document.getElementById("rs_code").value = "";
+        document.getElementById("rs_password").value = "";
+        setMsg("resetMsg", "コードを送信しました（登録済みの場合）。", false);
+        show("reset");
+      } catch (e) { setMsg("forgotMsg", "通信エラーが発生しました。", true); }
+      btn.disabled = false; btn.textContent = "再設定コードを送る";
+    }
+
+    // ---- パスワード再設定 ----
+    async function doReset() {
+      const btn = document.getElementById("resetBtn");
+      setMsg("resetMsg", "", false);
+      const code = document.getElementById("rs_code").value.trim();
+      const password = document.getElementById("rs_password").value;
+      if (code.length !== 6) { setMsg("resetMsg", "6桁のコードを入力してください。", true); return; }
+      if (password.length < 8) { setMsg("resetMsg", "新しいパスワードは8文字以上で設定してください。", true); return; }
+      btn.disabled = true; btn.textContent = "再設定中…";
+      try {
+        const { res, data } = await postJSON("/api/reset-password", { email: pendingEmail, code, password });
+        if (res.ok && data.ok) {
+          setMsg("loginMsg", "パスワードを再設定しました。新しいパスワードでログインしてください。", false);
+          document.getElementById("li_email").value = pendingEmail;
+          show("login");
+        } else {
+          setMsg("resetMsg", data.error || "再設定に失敗しました。", true);
+        }
+      } catch (e) { setMsg("resetMsg", "通信エラーが発生しました。", true); }
+      btn.disabled = false; btn.textContent = "パスワードを再設定";
+    }
+
+    // イベント登録
     document.getElementById("loginBtn").addEventListener("click", doLogin);
     document.getElementById("signupBtn").addEventListener("click", doSignup);
+    document.getElementById("verifyBtn").addEventListener("click", doVerify);
+    document.getElementById("forgotBtn").addEventListener("click", doForgot);
+    document.getElementById("resetBtn").addEventListener("click", doReset);
+    document.getElementById("forgotLink").addEventListener("click", (e) => { e.preventDefault(); show("forgot"); });
+    document.getElementById("resendLink").addEventListener("click", (e) => { e.preventDefault(); doResend(); });
+    document.getElementById("backToLoginFromVerify").addEventListener("click", (e) => { e.preventDefault(); show("login"); });
+    document.getElementById("backToLoginFromForgot").addEventListener("click", (e) => { e.preventDefault(); show("login"); });
+    document.getElementById("backToLoginFromReset").addEventListener("click", (e) => { e.preventDefault(); show("login"); });
     document.getElementById("li_password").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
     document.getElementById("su_password").addEventListener("keydown", (e) => { if (e.key === "Enter") doSignup(); });
+    document.getElementById("vf_code").addEventListener("keydown", (e) => { if (e.key === "Enter") doVerify(); });
+    document.getElementById("rs_password").addEventListener("keydown", (e) => { if (e.key === "Enter") doReset(); });
 
     // 既ログインならトップへ。新規登録が無効なら登録タブを隠す
     fetch("/api/session").then(r => r.json()).then(s => {
